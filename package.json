@@ -1,0 +1,29 @@
+{
+  "name": "non-perishable-world-vault-dao",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operationgenetics/non-perishable-world-vault-DAO.git"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/operationgenetics/non-perishable-world-vault-DAO/issues"
+  },
+  "homepage": "https://github.com/operationgenetics/non-perishable-world-vault-DAO#readme",
+  "dependencies": {
+    "@walletconnect/ethereum-provider": "^2.23.10",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

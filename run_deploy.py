@@ -1,4 +1,9 @@
-// SPDX-License-Identifier: MIT
+import os
+import subprocess
+
+print("[1/4] Writing NonPerishableWorldVaultDAO.sol contract...")
+os.makedirs("contracts", exist_ok=True)
+contract_code = """// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
 interface IERC20 {
@@ -269,3 +274,98 @@ contract NonPerishableWorldVaultDAO {
         return true;
     }
 }
+"""
+
+with open("contracts/NonPerishableWorldVaultDAO.sol", "w") as f:
+    f.write(contract_code)
+
+print("[2/4] Writing automated deployment script (deploy.js)...")
+deploy_js = """const { ethers } = require("ethers");
+const { EthereumProvider } = require("@walletconnect/ethereum-provider");
+const QRCode = require("qrcode-terminal");
+const fs = require("fs");
+const path = require("path");
+require("dotenv").config();
+
+async function main() {
+    const artifactPath = path.join(__dirname, "out/NonPerishableWorldVaultDAO.sol/NonPerishableWorldVaultDAO.json");
+    if (!fs.existsSync(artifactPath)) {
+        throw new Error("Contract artifacts not found. Please ensure forge build succeeded.");
+    }
+    const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+
+    console.log("Initializing WalletConnect v2 Provider for Arbitrum One...");
+    const wcProvider = await EthereumProvider.init({
+        projectId: process.env.WALLETCONNECT_PROJECT_ID || "3a8170812b534d0ff9d794f19a901d64",
+        chains: [42161],
+        optionalChains: [],
+        methods: ["eth_requestAccounts", "eth_sendTransaction", "personal_sign", "eth_signTypedData"],
+        optionalMethods: ["wallet_switchEthereumChain", "wallet_addEthereumChain"],
+        rpcMap: { 42161: "https://arb1.arbitrum.io/rpc" },
+        metadata: {
+            name: "Non-Perishable World Vault DAO",
+            description: "Off-Grid Robotic & Ecological Governance",
+            url: "https://obscura.network",
+            icons: ["https://avatars.githubusercontent.com/u/37784886"]
+        },
+        showQrModal: false
+    });
+
+    wcProvider.on("display_uri", (uri) => {
+        console.log("\\n==================================================");
+        console.log("SCAN THIS QR CODE WITH METAMASK MOBILE:");
+        console.log("==================================================\\n");
+        QRCode.generate(uri, { small: true });
+        console.log("\\nWalletConnect URI:", uri);
+        console.log("\\nApprove the connection prompt in MetaMask Mobile...");
+    });
+
+    await wcProvider.connect();
+
+    const directProvider = new ethers.JsonRpcProvider("https://arb1.arbitrum.io/rpc");
+    const browserProvider = new ethers.BrowserProvider(wcProvider);
+    const signer = await browserProvider.getSigner();
+    const deployerAddress = await signer.getAddress();
+
+    console.log(`\\nConnected Wallet Address: ${deployerAddress}`);
+    console.log("Preparing deployment transaction...");
+
+    const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode.object || artifact.bytecode, signer);
+    const initialDaoPqcKey = ethers.toUtf8Bytes("dao-pqc-hybrid-ed25519-mldsa-v1");
+
+    const feeData = await directProvider.getFeeData();
+    const deployOptions = {
+        gasLimit: 4000000,
+        maxFeePerGas: feeData.maxFeePerGas ? feeData.maxFeePerGas * 12n / 10n : undefined,
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.parseUnits("0.1", "gwei")
+    };
+
+    console.log("\\nBroadcasting contract deployment... Please check MetaMask mobile to sign.");
+    const contract = await factory.deploy(initialDaoPqcKey, deployOptions);
+    
+    console.log(`Transaction Hash: ${contract.deploymentTransaction().hash}`);
+    await contract.waitForDeployment();
+    
+    console.log(`\\n==========================================`);
+    console.log(`Deployment Successful on Arbitrum One!`);
+    console.log(`Contract Address: ${await contract.getAddress()}`);
+    console.log(`==========================================\\n`);
+
+    await wcProvider.disconnect();
+    process.exit(0);
+}
+
+main().catch((err) => {
+    console.error("Deployment failed:", err);
+    process.exit(1);
+});
+"""
+
+with open("deploy.js", "w") as f:
+    f.write(deploy_js)
+
+print("[3/4] Compiling contract with Forge...")
+subprocess.run(["forge", "build"], check=True)
+
+print("[4/4] Setup complete! Run your deployment with:")
+print("       node deploy.js")
