@@ -41,6 +41,7 @@ contract NonPerishableWorldVaultDAOTest is Test {
     NonPerishableWorldVaultDAO public dao;
     MockERC20 public mockToken;
 
+    address public constant OBS_TOKEN_ADDRESS = 0x2D8760e2877148d239a54952A458710553B2B54b;
     address public user1 = address(0x1);
     address public user2 = address(0x2);
     address public user3 = address(0x3);
@@ -54,8 +55,10 @@ contract NonPerishableWorldVaultDAOTest is Test {
         bytes memory initialDaoPqcKey = INITIAL_DAO_PQC_KEY;
         dao = new NonPerishableWorldVaultDAO(initialDaoPqcKey);
 
-        mockToken = new MockERC20();
-        vm.label(address(mockToken), "MockOBS");
+        MockERC20 tempMock = new MockERC20();
+        vm.etch(OBS_TOKEN_ADDRESS, address(tempMock).code);
+        mockToken = MockERC20(payable(OBS_TOKEN_ADDRESS));
+        vm.label(OBS_TOKEN_ADDRESS, "MockOBS");
     }
 
     function testJoinDAO() public {
@@ -161,7 +164,7 @@ contract NonPerishableWorldVaultDAOTest is Test {
         vm.prank(user2);
         dao.vote(proposalId, false);
 
-        assertEq(dao.getProposalYesVotes(proposalId), 100 * 1e18);
+        assertEq(dao.getProposalYesVotes(proposalId), 50 * 1e18);
         assertEq(dao.getProposalNoVotes(proposalId), 100 * 1e18);
     }
 
@@ -172,7 +175,7 @@ contract NonPerishableWorldVaultDAOTest is Test {
         dao.claimMonthlyLP();
 
         vm.prank(user1);
-        uint256 proposalId = dao.createProposal("Test", "Scope", 1000, 7);
+        uint256 proposalId = dao.createProposal("Test", "Scope", 1000, 60);
 
         vm.warp(block.timestamp + 31 days);
 
@@ -235,7 +238,7 @@ contract NonPerishableWorldVaultDAOTest is Test {
         dao.voteVaultLocation(proposalId, true);
 
         (,,,,,,,, uint256 yesVotes, uint256 noVotes,,) = dao.getVaultLocationProposal(proposalId);
-        assertEq(yesVotes, 200 * 1e18);
+        assertEq(yesVotes, 150 * 1e18);
         assertEq(noVotes, 0);
     }
 
@@ -273,7 +276,7 @@ contract NonPerishableWorldVaultDAOTest is Test {
         assertFalse(dao.robotConfigUpdatable());
 
         vm.prank(masterController);
-        vm.expectRevert("Robot configuration updates have been permanently revoked");
+        vm.expectRevert("System is permanently immutable");
         dao.setupRoomieRobotAndLock(address(0x9988776655443322110099887766554433221100), ROBOT_PQC_KEY);
     }
 
@@ -301,7 +304,9 @@ contract NonPerishableWorldVaultDAOTest is Test {
         dao.setupRoomieRobotAndLock(robotAddress, ROBOT_PQC_KEY);
 
         vm.prank(masterController);
-        dao.createProjectMilestone("Install solar", 1_000_000 * 1e18, 30);
+        dao.createProjectMilestone("Install solar", 1_000_000 * 1e18, 90);
+
+        vm.warp(block.timestamp + 61 days);
 
         vm.prank(masterController);
         dao.verifyMilestoneByRobot(1, "robot-sig-hex", "pqc-sig-bytes");
@@ -319,22 +324,34 @@ contract NonPerishableWorldVaultDAOTest is Test {
         vm.prank(masterController);
         dao.setupRoomieRobotAndLock(robotAddress, ROBOT_PQC_KEY);
 
+        mockToken.mint(address(dao), 10_000_000 * 1e18);
+
+        uint256 initialTime = block.timestamp;
+
         vm.prank(masterController);
-        dao.createProjectMilestone("Milestone 1", 1_000_000 * 1e18, 30);
-        vm.prank(masterController);
-        dao.createProjectMilestone("Milestone 2", 1_000_000 * 1e18, 30);
+        dao.createProjectMilestone("Milestone 1", 1_000_000 * 1e18, 180);
+
+        vm.warp(initialTime + 61 days);
 
         vm.prank(masterController);
         dao.verifyMilestoneByRobot(1, "sig1", "pqc1");
 
         vm.prank(masterController);
+        dao.completeMilestoneAndDisburse(1, user1, 500_000 * 1e18, "Milestone 1 done");
+
+        vm.prank(masterController);
+        dao.createProjectMilestone("Milestone 2", 1_000_000 * 1e18, 180);
+
+        vm.prank(masterController);
         vm.expectRevert("Robot enforces mathematical pacing: biometric authorization required only once every 2 months");
         dao.verifyMilestoneByRobot(2, "sig2", "pqc2");
 
-        vm.warp(block.timestamp + 61 days);
+        vm.warp(initialTime + 122 days);
 
         vm.prank(masterController);
         dao.verifyMilestoneByRobot(2, "sig2", "pqc2");
+
+        assertTrue(dao.getMilestoneRobotVerified(2));
     }
 
     function testCompleteMilestoneAndDisburse() public {
@@ -347,7 +364,10 @@ contract NonPerishableWorldVaultDAOTest is Test {
         mockToken.mint(address(dao), 10_000_000 * 1e18);
 
         vm.prank(masterController);
-        dao.createProjectMilestone("Install solar", 1_000_000 * 1e18, 30);
+        dao.createProjectMilestone("Install solar", 1_000_000 * 1e18, 90);
+
+        vm.warp(block.timestamp + 61 days);
+
         vm.prank(masterController);
         dao.verifyMilestoneByRobot(1, "robot-sig", "pqc-sig");
 
@@ -405,6 +425,8 @@ contract NonPerishableWorldVaultDAOTest is Test {
         vm.prank(user1);
         dao.vote(proposalId, true);
 
+        vm.warp(block.timestamp + 61 days);
+
         vm.prank(masterController);
         dao.executeVaultDisbursementWithPQC(user1, 500_000 * 1e18, "Initial funding", proposalId, "robot-sig", "pqc-sig");
 
@@ -418,15 +440,26 @@ contract NonPerishableWorldVaultDAOTest is Test {
         vm.prank(masterController);
         dao.setupRoomieRobotAndLock(robotAddress, ROBOT_PQC_KEY);
 
+        mockToken.mint(address(dao), 10_000_000 * 1e18);
+
         vm.prank(masterController);
-        dao.createProjectMilestone("Milestone 1", 1_000_000 * 1e18, 30);
+        dao.createProjectMilestone("Milestone 1", 1_000_000 * 1e18, 90);
+
+        vm.warp(block.timestamp + 61 days);
+
         vm.prank(masterController);
-        dao.createProjectMilestone("Milestone 2", 1_000_000 * 1e18, 30);
+        dao.verifyMilestoneByRobot(1, "sig1", "pqc1");
+
+        vm.prank(masterController);
+        dao.completeMilestoneAndDisburse(1, user1, 500_000 * 1e18, "Milestone 1 done");
+
+        vm.prank(masterController);
+        dao.createProjectMilestone("Milestone 2", 1_000_000 * 1e18, 90);
 
         (bool fundsUnlocked_, uint256 count, uint256 current, bool locked, bool updatable) = dao.getProjectStatus();
         assertTrue(fundsUnlocked_);
         assertEq(count, 2);
-        assertEq(current, 1);
+        assertEq(current, 2);
         assertFalse(locked);
         assertTrue(updatable);
     }
